@@ -15,7 +15,7 @@ void OverlordManager::OverlordMove(const sc2::Unit & moomoo, const sc2::Point2D 
 	// how to access map information? 
 
 	// move overlord to given position
-	bot.Actions()->UnitCommand(moomoo, sc2::ABILITY_ID::MOVE, destination);
+	bot.Actions()->UnitCommand(&moomoo, sc2::ABILITY_ID::MOVE, destination);
 }
 
 // Moves Overlord to points specified
@@ -35,7 +35,7 @@ void OverlordManager::OverlordMove(const UnitTag & moomoo, const std::vector<sc2
 	{
 		if (!(bot.GetUnit(moomoo)->pos.x == destinations[index].x && bot.GetUnit(moomoo)->pos.y == destinations[index].y))
 		{
-			bot.Actions()->UnitCommand(moomoo, sc2::ABILITY_ID::MOVE, destinations[index]);
+			bot.Actions()->UnitCommand(bot.GetUnit(moomoo), sc2::ABILITY_ID::MOVE, destinations[index]);
 			return;
 		}
 		else
@@ -88,7 +88,7 @@ void OverlordManager::PersonalSpace(const std::vector<sc2::Unit> & moomoos, CCBo
 // @bot		Bot thing
 void OverlordManager::GenerateCreep(const UnitTag & moomoo, CCBot & bot)
 {
-	bot.Actions()->UnitCommand(moomoo, sc2::ABILITY_ID::BEHAVIOR_GENERATECREEPON);
+	bot.Actions()->UnitCommand(bot.GetUnit(moomoo), sc2::ABILITY_ID::BEHAVIOR_GENERATECREEPON);
 }
 
 // takes overlord functions and executes them, called in CCBot.cpp
@@ -99,11 +99,11 @@ void OverlordManager::Execute(CCBot & bot)
 	for (auto & unit : bot.UnitInfo().getUnits(Players::Self))
 	{
 		// looks through list of units, checks if they are overlords
-		if (bot.GetUnit(unit)->unit_type == sc2::UNIT_TYPEID::ZERG_OVERLORD)
+		if (unit->unit_type == sc2::UNIT_TYPEID::ZERG_OVERLORD)
 		{
 			// testing generate creep function
 			// works! as long as bot is not moving
-			OverlordManager::GenerateCreep(unit, bot);
+			OverlordManager::GenerateCreep(unit->tag, bot);
 
 			// if they are overlords, move them to the point specified
 			// move and then stop issuing move command?  
@@ -118,7 +118,7 @@ void OverlordManager::Execute(CCBot & bot)
 			}
 
 			// if overlord is already at base location, stop moving
-			if (unit.pos.x == enemyBaseLocation->getPosition().x && unit.pos.y && enemyBaseLocation->getPosition().x)
+			if (unit->pos.x == enemyBaseLocation->getPosition().x && unit->pos.y && enemyBaseLocation->getPosition().x)
 			{
 				return;
 			}
@@ -131,7 +131,7 @@ void OverlordManager::Execute(CCBot & bot)
 			std::vector<sc2::Point2D> places = { point, point2 };
 
 
-			OverlordManager::OverlordMove(unit, places, bot);
+			//OverlordManager::OverlordMove(unit, places, bot);
 		}
 	}
 }

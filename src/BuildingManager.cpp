@@ -3,9 +3,6 @@
 #include "Micro.h"
 #include "CCBot.h"
 #include "Util.h"
-#include <string>
-
-bool LairPresent = FALSE;
 
 BuildingManager::BuildingManager(CCBot & bot)
     : m_bot(bot)
@@ -25,14 +22,14 @@ void BuildingManager::onStart()
 // gets called every frame from GameCommander
 void BuildingManager::onFrame()
 {
-    for (auto & unit : m_bot.UnitInfo().getUnits(Players::Self))
+    for (auto unit : m_bot.UnitInfo().getUnits(Players::Self))
     {
         // filter out units which aren't buildings under construction
-        if (m_bot.Data(unit.unit_type).isBuilding)
+        if (m_bot.Data(unit->unit_type).isBuilding)
         {
             std::stringstream ss;
-            ss << unit.tag;
-            m_bot.Map().drawText(unit.pos, ss.str());
+            ss << unit->tag;
+            m_bot.Map().drawText(unit->pos, ss.str());
         }
     }
 
@@ -42,9 +39,6 @@ void BuildingManager::onFrame()
     checkForStartedConstruction();          // check to see if any buildings have started construction and update data structures    
     checkForDeadTerranBuilders();           // if we are terran and a building is under construction without a worker, assign a new one    
     checkForCompletedBuildings();           // check to see if any buildings have completed and update data structures
-
-	UpgradeBuilding(sc2::ABILITY_ID::MORPH_LAIR, m_bot);
-	MakeNydusNetwork(sc2::Point2D(40, 50), m_bot);
 
     drawBuildingInformation();
 }
@@ -78,7 +72,7 @@ void BuildingManager::validateWorkersAndBuildings()
             continue;
         }
 
-        auto buildingUnit = m_bot.GetUnit(b.buildingUnitTag);
+        auto buildingUnit = b.buildingUnit;
 
         // TODO: || !b.buildingUnit->getType().isBuilding()
         if (!buildingUnit || (buildingUnit->health <= 0))
@@ -101,7 +95,7 @@ void BuildingManager::assignWorkersToUnassignedBuildings()
             continue;
         }
 
-        BOT_ASSERT(b.builderUnitTag == 0, "Error: Tried to assign a builder to a building that already had one ");
+        BOT_ASSERT(b.builderUnit == nullptr, "Error: Tried to assign a builder to a building that already had one ");
 
         if (m_debugMode) { printf("Assigning Worker To: %s", sc2::UnitTypeToName(b.type)); }
 
@@ -115,9 +109,9 @@ void BuildingManager::assignWorkersToUnassignedBuildings()
         b.finalPosition = testLocation;
 
         // grab the worker unit from WorkerManager which is closest to this final position
-        UnitTag builderUnitTag = m_bot.Workers().getBuilder(b);
-        b.builderUnitTag = builderUnitTag;
-        if (!b.builderUnitTag)
+        const sc2::Unit * builderUnit = m_bot.Workers().getBuilder(b);
+        b.builderUnit = builderUnit;
+        if (!b.builderUnit)
         {
             continue;
         }
@@ -141,7 +135,7 @@ void BuildingManager::constructAssignedBuildings()
 
         // TODO: not sure if this is the correct way to tell if the building is constructing
         sc2::AbilityID buildAbility = m_bot.Data(b.type).buildAbility;
-        const sc2::Unit * builderUnit = m_bot.GetUnit(b.builderUnitTag);
+        const sc2::Unit * builderUnit = b.builderUnit;
 
         bool isConstructing = false;
 
@@ -165,7 +159,7 @@ void BuildingManager::constructAssignedBuildings()
             // if we haven't explored the build position, go there
             if (!isBuildingPositionExplored(b))
             {
-                Micro::SmartMove(*builderUnit, b.finalPosition, m_bot);
+                Micro::SmartMove(builderUnit, b.finalPosition, m_bot);
             }
             // if this is not the first time we've sent this guy to build this
             // it must be the case that something was in the way of building
@@ -180,19 +174,19 @@ void BuildingManager::constructAssignedBuildings()
                 if (Util::IsRefineryType(b.type))
                 {
                     // first we find the geyser at the desired location
-                    UnitTag geyserTag = 0;
-                    for (auto & unit : m_bot.Observation()->GetUnits())
+                    const sc2::Unit * geyser = nullptr;
+                    for (auto unit : m_bot.Observation()->GetUnits())
                     {
-                        if (Util::IsGeyser(unit) && Util::Dist(b.finalPosition, unit.pos) < 3)
+                        if (Util::IsGeyser(unit) && Util::Dist(b.finalPosition, unit->pos) < 3)
                         {
-                            geyserTag = unit.tag;
+                            geyser = unit;
                             break;
                         }
                     }
 
-                    if (geyserTag)
+                    if (geyser)
                     {
-                        Micro::SmartBuildTag(b.builderUnitTag, b.type, geyserTag, m_bot);
+                        Micro::SmartBuildTarget(b.builderUnit, b.type, geyser, m_bot);
                     }
                     else
                     {
@@ -202,7 +196,7 @@ void BuildingManager::constructAssignedBuildings()
                 // if it's not a refinery, we build right on the position
                 else
                 {
-                    Micro::SmartBuild(b.builderUnitTag, b.type, b.finalPosition, m_bot);
+                    Micro::SmartBuild(b.builderUnit, b.type, b.finalPosition, m_bot);
                 }
 
                 // set the flag to true
@@ -216,10 +210,10 @@ void BuildingManager::constructAssignedBuildings()
 void BuildingManager::checkForStartedConstruction()
 {
     // for each building unit which is being constructed
-    for (auto & buildingStarted : m_bot.UnitInfo().getUnits(Players::Self))
+    for (auto buildingStarted : m_bot.UnitInfo().getUnits(Players::Self))
     {
         // filter out units which aren't buildings under construction
-        if (!m_bot.Data(buildingStarted.unit_type).isBuilding || buildingStarted.build_progress == 0.0f || buildingStarted.build_progress == 1.0f)
+        if (!m_bot.Data(buildingStarted->unit_type).isBuilding || buildingStarted->build_progress == 0.0f || buildingStarted->build_progress == 1.0f)
         {
             continue;
         }
@@ -234,33 +228,33 @@ void BuildingManager::checkForStartedConstruction()
             }
 
             // check if the positions match
-            float dx = b.finalPosition.x - buildingStarted.pos.x;
-            float dy = b.finalPosition.y - buildingStarted.pos.y;
+            float dx = b.finalPosition.x - buildingStarted->pos.x;
+            float dy = b.finalPosition.y - buildingStarted->pos.y;
 
             if (dx*dx + dy*dy < 1)
             {
-                if (b.buildingUnitTag != 0)
+                if (b.buildingUnit != nullptr)
                 {
                     std::cout << "Building mis-match somehow\n";
                 }
 
                 // the resources should now be spent, so unreserve them
-                m_reservedMinerals -= Util::GetUnitTypeMineralPrice(buildingStarted.unit_type, m_bot);
-                m_reservedGas      -= Util::GetUnitTypeGasPrice(buildingStarted.unit_type, m_bot);
+                m_reservedMinerals -= Util::GetUnitTypeMineralPrice(buildingStarted->unit_type, m_bot);
+                m_reservedGas      -= Util::GetUnitTypeGasPrice(buildingStarted->unit_type, m_bot);
                 
                 // flag it as started and set the buildingUnit
                 b.underConstruction = true;
-                b.buildingUnitTag = buildingStarted.tag;
+                b.buildingUnit = buildingStarted;
 
                 // if we are zerg, the buildingUnit now becomes nullptr since it's destroyed
                 if (m_bot.GetPlayerRace(Players::Self) == sc2::Race::Zerg)
                 {
-                    b.builderUnitTag = 0;
+                    b.builderUnit = nullptr;
                 }
                 else if (m_bot.GetPlayerRace(Players::Self) == sc2::Race::Protoss)
                 {
-                    m_bot.Workers().finishedWithWorker(b.builderUnitTag);
-                    b.builderUnitTag = 0;
+                    m_bot.Workers().finishedWithWorker(b.builderUnit);
+                    b.builderUnit = nullptr;
                 }
 
                 // put it in the under construction vector
@@ -293,12 +287,12 @@ void BuildingManager::checkForCompletedBuildings()
         }
 
         // if the unit has completed
-        if (m_bot.GetUnit(b.buildingUnitTag)->build_progress == 1.0f)
+        if (b.buildingUnit->build_progress == 1.0f)
         {
             // if we are terran, give the worker back to worker manager
             if (m_bot.GetPlayerRace(Players::Self) == sc2::Race::Terran)
             {
-                m_bot.Workers().finishedWithWorker(b.builderUnitTag);
+                m_bot.Workers().finishedWithWorker(b.builderUnit);
             }
 
             // remove this unit from the under construction vector
@@ -330,7 +324,7 @@ bool BuildingManager::isBuildingPositionExplored(const Building & b) const
 
 char BuildingManager::getBuildingWorkerCode(const Building & b) const
 {
-    return b.builderUnitTag == 0 ? 'X' : 'W';
+    return b.builderUnit == nullptr ? 'X' : 'W';
 }
 
 int BuildingManager::getReservedMinerals()
@@ -361,15 +355,15 @@ void BuildingManager::drawBuildingInformation()
     {
         std::stringstream dss;
 
-        if (b.builderUnitTag)
+        if (b.builderUnit)
         {
-            dss << "\n\nBuilder: " << b.builderUnitTag << "\n";
+            dss << "\n\nBuilder: " << b.builderUnit->tag << "\n";
         }
 
-        if (b.buildingUnitTag)
+        if (b.buildingUnit)
         {
-            dss << "Building: " << b.buildingUnitTag << "\n" << m_bot.GetUnit(b.buildingUnitTag)->build_progress;
-            m_bot.Map().drawText(m_bot.GetUnit(b.buildingUnitTag)->pos, dss.str());
+            dss << "Building: " << b.buildingUnit->tag << "\n" << b.buildingUnit->build_progress;
+            m_bot.Map().drawText(b.buildingUnit->pos, dss.str());
         }
 
 
@@ -380,7 +374,7 @@ void BuildingManager::drawBuildingInformation()
         }
         else if (b.status == BuildingStatus::Assigned)
         {
-            ss << "Assigned " << sc2::UnitTypeToName(b.type) << "    " << b.builderUnitTag << " " << getBuildingWorkerCode(b) << " (" << b.finalPosition.x << "," << b.finalPosition.y << ")\n";
+            ss << "Assigned " << sc2::UnitTypeToName(b.type) << "    " << b.builderUnit->tag << " " << getBuildingWorkerCode(b) << " (" << b.finalPosition.x << "," << b.finalPosition.y << ")\n";
 
             float x1 = b.finalPosition.x;
             float y1 = b.finalPosition.y;
@@ -392,7 +386,7 @@ void BuildingManager::drawBuildingInformation()
         }
         else if (b.status == BuildingStatus::UnderConstruction)
         {
-            ss << "Constructing " << sc2::UnitTypeToName(b.type) << "    " << b.builderUnitTag << " " << b.buildingUnitTag << " " << getBuildingWorkerCode(b) << "\n";
+            ss << "Constructing " << sc2::UnitTypeToName(b.type) << "    " << b.builderUnit->tag << " " << b.buildingUnit->tag << " " << getBuildingWorkerCode(b) << "\n";
         }
     }
 
@@ -447,59 +441,4 @@ void BuildingManager::removeBuildings(const std::vector<Building> & toRemove)
             m_buildings.erase(it);
         }
     }
-}
-
-
-// upgrades a building to specified upgrade
-// add which building type to be upgraded
-// @building		the building to be upgraded
-// @upgrade			the upgrade to be performed
-// @bot				bot thing, important thing
-void BuildingManager::UpgradeBuilding(const sc2::ABILITY_ID upgrade, CCBot & bot)
-{
-
-	if (LairPresent)
-	{
-		return;
-	}
-
-	// cycles through all units, units include buildings too
-	for (auto & unitTag : bot.UnitInfo().getUnits(Players::Self))
-	{
-		// looks for a lair already present
-		// returns if so -- no need to upgrade multiple ones
-		if (bot.GetUnit(unitTag)->unit_type == sc2::UNIT_TYPEID::ZERG_LAIR)
-		{
-			LairPresent = TRUE;
-			return;
-		}
-
-		// looks if building is a hatchery, and if there isn't a lair already on the map
-		// upgrades it if it is
-		if (bot.GetUnit(unitTag)->unit_type == sc2::UNIT_TYPEID::ZERG_HATCHERY && LairPresent == FALSE)
-		{
-			bot.Actions()->UnitCommand(unitTag, upgrade);
-		}
-	}
-	
-}
-
-// makes a nydus network point in enemy base
-// @nydus			the existing network in your base
-// @enemyBaseCoord	where in the enemy base to build the new network
-// @bot				bot thing, necessary thing
-void BuildingManager::MakeNydusNetwork(sc2::Point2D & enemyBaseCoord, CCBot & bot)
-{
-	// need vision to build, no creep needed
-	//bot.Actions()->UnitCommand(nydus, sc2::ABILITY_ID::BUILD_NYDUSNETWORK, enemyBaseCoord);
-	// how to tell it to build it only under the one, correct overlord? 
-
-	for (auto & unitTag : bot.UnitInfo().getUnits(Players::Self))
-	{
-		// looks through list of units, checks if they are nydus networks
-		if (bot.GetUnit(unitTag)->unit_type == sc2::UNIT_TYPEID::ZERG_NYDUSNETWORK)
-		{
-			bot.Actions()->UnitCommand(unitTag, sc2::ABILITY_ID::BUILD_NYDUSWORM, enemyBaseCoord);
-		}
-	}
 }
